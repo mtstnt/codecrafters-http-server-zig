@@ -5,14 +5,14 @@ const Allocator = std.heap.page_allocator;
 
 const BUFFER_SIZE = 4096;
 
-fn strSplit(string: []const u8, delimiter: []const u8) ![][]const u8 {
+fn strSplit(string: []const u8, delimiter: []const u8) !std.ArrayList([]const u8) {
     var result = std.ArrayList([]const u8).init(Allocator);
     var it = std.mem.split(u8, string, delimiter);
     while (it.next()) |a| {
         if (a.len == 0) continue;
         try result.append(a);
     }
-    return result.items;
+    return result;
 }
 
 fn strEquals(a: []const u8, b: []const u8) bool {
@@ -26,25 +26,13 @@ fn strEquals(a: []const u8, b: []const u8) bool {
     return true;
 }
 
-fn strConcat(allocator: std.mem.Allocator, strs: []const []const u8) ![]const u8 {
-    var total_size: usize = 0;
-    for (strs) |s| {
-        total_size += s.len;
-    }
-    var result = try allocator.alloc(u8, total_size);
-    var index: usize = 0;
-    for (strs) |s| {
-        for (s) |c| {
-            result[index] = c;
-            index += 1;
-        }
-    }
-    return result;
-}
-
 // For now, too lazy to implement map/trie data structure.
 fn matchRoute(path: []const u8) ![]const u8 {
-    const path_parts = try strSplit(path, "/");
+    const split_results = try strSplit(path, "/");
+    defer split_results.deinit();
+
+    const path_parts = split_results.items;
+
     std.log.info("Path parts: {any}", .{path_parts});
 
     if (path_parts.len == 0) {
@@ -64,12 +52,19 @@ const Request = struct {
     path: []const u8,
 
     pub fn fromBytes(request_bytes: []const u8) !Self {
-        const lines = try strSplit(request_bytes, "\r\n");
+        const split_result = try strSplit(request_bytes, "\r\n");
+        defer split_result.deinit();
+
+        const lines = split_result.items;
+
         if (lines.len == 0) {
             return error.EmptyRequest;
         }
 
-        const parse_results = try strSplit(lines[0], " ");
+        const split_result2 = try strSplit(lines[0], " ");
+        defer split_result2.deinit();
+
+        const parse_results = split_result2.items;
         return Request{
             .method = parse_results[0],
             .path = parse_results[1],
@@ -102,7 +97,10 @@ pub fn main() !void {
     if (strEquals(routeKey, "ROOT")) {
         response = "HTTP/1.1 200 OK\r\n\r\n";
     } else if (strEquals(routeKey, "ECHO")) {
-        const path_parts = try strSplit(request.path, "/");
+        const split_results = try strSplit(request.path, "/");
+        defer split_results.deinit();
+
+        const path_parts = split_results.items;
         const str = path_parts[1];
         const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
         response = try std.fmt.allocPrint(Allocator, format, .{ str.len, str });
