@@ -93,9 +93,11 @@ pub fn main() !void {
     const routeKey = try matchRoute(request.path);
     std.log.info("Route key: {s}", .{routeKey});
 
-    var response: []const u8 = undefined;
+    var response: []u8 = undefined;
     if (strEquals(routeKey, "ROOT")) {
-        response = "HTTP/1.1 200 OK\r\n\r\n";
+        const response_str = "HTTP/1.1 200 OK\r\n\r\n";
+        response = try Allocator.alloc(u8, response_str.len);
+        std.mem.copyForwards(u8, response, response_str);
     } else if (strEquals(routeKey, "ECHO")) {
         const split_results = try strSplit(request.path, "/");
         defer split_results.deinit();
@@ -104,10 +106,12 @@ pub fn main() !void {
         const str = path_parts[1];
         const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
         response = try std.fmt.allocPrint(Allocator, format, .{ str.len, str });
-        // TODO: Free this memory.
     } else {
-        response = "HTTP/1.1 404 Not Found\r\n\r\n";
+        const response_str = "HTTP/1.1 404 Not Found\r\n\r\n";
+        response = try Allocator.alloc(u8, response_str.len);
+        std.mem.copyForwards(u8, response, response_str);
     }
+    defer Allocator.free(response);
 
     try connection.stream.writeAll(response);
     defer connection.stream.close();
@@ -118,7 +122,7 @@ pub fn main() !void {
 test "strSplit" {
     const T = std.testing;
     const splitResults = try strSplit("/echo/hello", "/");
-    try T.expectEqual(splitResults.len, 2);
+    try T.expectEqual(splitResults.items.len, 2);
 }
 
 test "routeMatcher" {
