@@ -1,34 +1,16 @@
 const std = @import("std");
 const net = std.net;
 
+const strings = @import("./strings.zig");
+const http = @import("./http.zig");
+
 const Allocator = std.heap.page_allocator;
 
 const BUFFER_SIZE = 4096;
 
-fn strSplit(string: []const u8, delimiter: []const u8) !std.ArrayList([]const u8) {
-    var result = std.ArrayList([]const u8).init(Allocator);
-    var it = std.mem.split(u8, string, delimiter);
-    while (it.next()) |a| {
-        if (a.len == 0) continue;
-        try result.append(a);
-    }
-    return result;
-}
-
-fn strEquals(a: []const u8, b: []const u8) bool {
-    if (a.len != b.len) return false;
-    var i: usize = 0;
-    while (i < a.len) : (i += 1) {
-        if (a[i] != b[i]) {
-            return false;
-        }
-    }
-    return true;
-}
-
 // For now, too lazy to implement map/trie data structure.
 fn matchRoute(path: []const u8) ![]const u8 {
-    const split_results = try strSplit(path, "/");
+    const split_results = try strings.split(Allocator, path, "/");
     defer split_results.deinit();
 
     const path_parts = split_results.items;
@@ -39,38 +21,12 @@ fn matchRoute(path: []const u8) ![]const u8 {
         return "ROOT";
     }
 
-    if (path_parts.len >= 2 and strEquals(path_parts[0], "echo")) {
+    if (path_parts.len >= 2 and strings.equals(path_parts[0], "echo")) {
         return "ECHO";
     }
 
     return "404";
 }
-
-const Request = struct {
-    const Self = @This();
-    method: []const u8,
-    path: []const u8,
-
-    pub fn fromBytes(request_bytes: []const u8) !Self {
-        const split_result = try strSplit(request_bytes, "\r\n");
-        defer split_result.deinit();
-
-        const lines = split_result.items;
-
-        if (lines.len == 0) {
-            return error.EmptyRequest;
-        }
-
-        const split_result2 = try strSplit(lines[0], " ");
-        defer split_result2.deinit();
-
-        const parse_results = split_result2.items;
-        return Request{
-            .method = parse_results[0],
-            .path = parse_results[1],
-        };
-    }
-};
 
 pub fn main() !void {
     const address = try net.Address.resolveIp("127.0.0.1", 4221);
@@ -86,20 +42,23 @@ pub fn main() !void {
     const buffer = try Allocator.alloc(u8, BUFFER_SIZE);
     defer Allocator.free(buffer);
 
+    // Reset the allocated buffer to zero values.
+    @memset(buffer, 0);
+
     _ = try connection.stream.read(buffer);
 
-    const request = try Request.fromBytes(buffer);
+    const request = try http.parseRequest(Allocator, buffer);
 
     const routeKey = try matchRoute(request.path);
     std.log.info("Route key: {s}", .{routeKey});
 
     var response: []u8 = undefined;
-    if (strEquals(routeKey, "ROOT")) {
-        const response_str = "HTTP/1.1 200 OK\r\n\r\n";
+    if (strings.equals(routeKey, "ROOT")) {
+        const response_str = "HTTP/1.1 200 OK\r\n\r\nOK";
         response = try Allocator.alloc(u8, response_str.len);
         std.mem.copyForwards(u8, response, response_str);
-    } else if (strEquals(routeKey, "ECHO")) {
-        const split_results = try strSplit(request.path, "/");
+    } else if (strings.equals(routeKey, "ECHO")) {
+        const split_results = try strings.split(Allocator, request.path, "/");
         defer split_results.deinit();
 
         const path_parts = split_results.items;
@@ -114,20 +73,20 @@ pub fn main() !void {
     defer Allocator.free(response);
 
     try connection.stream.writeAll(response);
-    defer connection.stream.close();
+    connection.stream.close();
 
     std.log.info("Exiting...", .{});
 }
 
 test "strSplit" {
     const T = std.testing;
-    const splitResults = try strSplit("/echo/hello", "/");
+    const splitResults = try strings.split(Allocator, "/echo/hello", "/");
     try T.expectEqual(splitResults.items.len, 2);
 }
 
 test "routeMatcher" {
     const T = std.testing;
     const routeKey = try matchRoute("/echo/hello");
-    const isOk = strEquals(routeKey, "ECHO");
+    const isOk = strings.equals(routeKey, "ECHO");
     try T.expect(isOk);
 }
