@@ -21,6 +21,10 @@ fn matchRoute(path: []const u8) ![]const u8 {
         return "ROOT";
     }
 
+    if (path_parts.len >= 1 and strings.equals(path_parts[0], "user-agent")) {
+        return "USER_AGENT";
+    }
+
     if (path_parts.len >= 2 and strings.equals(path_parts[0], "echo")) {
         return "ECHO";
     }
@@ -65,6 +69,9 @@ pub fn main() !void {
         const str = path_parts[1];
         const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
         response = try std.fmt.allocPrint(Allocator, format, .{ str.len, str });
+    } else if (strings.equals(routeKey, "USER_AGENT")) {
+        const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
+        response = try std.fmt.allocPrint(Allocator, format, .{ request.headers.get("User-Agent").?.len, request.headers.get("User-Agent").? });
     } else {
         const response_str = "HTTP/1.1 404 Not Found\r\n\r\n";
         response = try Allocator.alloc(u8, response_str.len);
