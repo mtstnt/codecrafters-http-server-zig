@@ -70,8 +70,9 @@ pub fn main() !void {
         const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
         response = try std.fmt.allocPrint(Allocator, format, .{ str.len, str });
     } else if (strings.equals(routeKey, "USER_AGENT")) {
+        const header_value = request.headers.get("User-Agent").?;
         const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
-        response = try std.fmt.allocPrint(Allocator, format, .{ request.headers.get("User-Agent").?.len, request.headers.get("User-Agent").? });
+        response = try std.fmt.allocPrint(Allocator, format, .{ header_value.len, header_value });
     } else {
         const response_str = "HTTP/1.1 404 Not Found\r\n\r\n";
         response = try Allocator.alloc(u8, response_str.len);

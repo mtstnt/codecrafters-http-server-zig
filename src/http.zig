@@ -62,7 +62,9 @@ fn parseStatusLine(line: String) !std.meta.Tuple(&.{ String, String }) {
 fn parseHeaderLine(line: String) !std.meta.Tuple(&.{ String, String }) {
     var colon_iterator = std.mem.split(u8, line, ":");
     const key = colon_iterator.next() orelse return error.InvalidHTTPHeaderLine;
-    const value = colon_iterator.next() orelse "";
+    var value = colon_iterator.next() orelse "";
+    // Remove whitespace after colon.
+    value = std.mem.trim(u8, value, " ");
     return .{ key, value };
 }
 
@@ -73,7 +75,7 @@ fn printRequest(writer: anytype, request: Request) !void {
     _ = try writer.write("Headers:\n");
     while (header_it.next()) |header| {
         const value = request.headers.get(header.*) orelse "[EMPTY VALUE]";
-        try std.fmt.format(writer, "{s}:{s}\n", .{ header.*, value });
+        try std.fmt.format(writer, "{s}:{s} ({d})\n", .{ header.*, value, value.len });
     }
     try std.fmt.format(writer, "Body: {s}\n", .{request.body});
 }
