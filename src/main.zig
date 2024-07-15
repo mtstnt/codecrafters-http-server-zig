@@ -8,6 +8,8 @@ const Allocator = std.heap.page_allocator;
 
 const BUFFER_SIZE = 4096;
 
+var rootPath: ?[]const u8 = null;
+
 // For now, too lazy to implement map/trie data structure.
 fn matchRoute(path: []const u8) ![]const u8 {
     const split_results = try strings.split(Allocator, path, "/");
@@ -29,13 +31,29 @@ fn matchRoute(path: []const u8) ![]const u8 {
         return "ECHO";
     }
 
+    if (path_parts.len >= 2 and strings.equals(path_parts[0], "files")) {
+        return "FILE";
+    }
+
     return "404";
 }
 
 pub fn main() !void {
+    var args = try std.process.argsWithAllocator(Allocator);
+    defer args.deinit();
+
+    while (args.next()) |arg| {
+        if (strings.equals(arg, "--directory")) {
+            rootPath = args.next().?;
+            break;
+        }
+    }
+
+    std.debug.print("Root path: {s}\n", .{rootPath orelse "[PROJECT_DIR]"});
+
     const address = try net.Address.resolveIp("127.0.0.1", 4221);
 
-    std.log.info("Listening to port 4221", .{});
+    std.debug.print("Listening to port 4221\n", .{});
     var listener = try address.listen(.{
         .reuse_address = true,
     });
@@ -58,6 +76,7 @@ pub fn main() !void {
 
 fn handleRequest(connection: std.net.Server.Connection) !void {
     std.debug.print("Request received.\n", .{});
+    defer connection.stream.close();
 
     const buffer = try Allocator.alloc(u8, BUFFER_SIZE);
     defer Allocator.free(buffer);
@@ -89,6 +108,40 @@ fn handleRequest(connection: std.net.Server.Connection) !void {
         const header_value = request.headers.get("User-Agent").?;
         const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
         response = try std.fmt.allocPrint(Allocator, format, .{ header_value.len, header_value });
+    } else if (strings.equals(routeKey, "FILE")) {
+        var split_str = try strings.split(Allocator, request.path, "/");
+        const path = try std.mem.concat(Allocator, u8, split_str.items[1..]);
+        std.debug.print("Path from request: {s}\n", .{path});
+
+        var file: ?std.fs.File = undefined;
+        if (rootPath == null) {
+            file = std.fs.cwd().openFile(path, .{}) catch null;
+        } else {
+            var pathAllocated = try Allocator.alloc(u8, rootPath.?.len + path.len + 1);
+            defer Allocator.free(pathAllocated);
+
+            var i: u32 = 0;
+            while (i < rootPath.?.len) : (i += 1) {
+                pathAllocated[i] = rootPath.?[i];
+            }
+            var counter: u32 = 0;
+            while (counter < path.len + 1) : (counter += 1) {
+                pathAllocated[i] = if (counter == 0) '/' else path[counter - 1];
+                i += 1;
+            }
+            std.debug.print("File path: {s}\n", .{pathAllocated});
+            file = std.fs.openFileAbsolute(pathAllocated, .{}) catch null;
+        }
+
+        if (file == null) {
+            const response_str = "HTTP/1.1 404 Not Found\r\n\r\n";
+            response = try Allocator.alloc(u8, response_str.len);
+            std.mem.copyForwards(u8, response, response_str);
+        } else {
+            const contents = try file.?.readToEndAlloc(Allocator, 4096);
+            const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
+            response = try std.fmt.allocPrint(Allocator, format, .{ contents.len, contents });
+        }
     } else {
         const response_str = "HTTP/1.1 404 Not Found\r\n\r\n";
         response = try Allocator.alloc(u8, response_str.len);
@@ -97,7 +150,6 @@ fn handleRequest(connection: std.net.Server.Connection) !void {
     defer Allocator.free(response);
 
     try connection.stream.writeAll(response);
-    connection.stream.close();
 }
 
 test "strSplit" {
