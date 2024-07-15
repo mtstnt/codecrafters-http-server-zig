@@ -4,6 +4,8 @@ const net = std.net;
 const strings = @import("./strings.zig");
 const httpRequest = @import("./request.zig");
 
+const String = strings.String;
+
 const Allocator = std.heap.page_allocator;
 
 const BUFFER_SIZE = 4096;
@@ -113,34 +115,40 @@ fn handleRequest(connection: std.net.Server.Connection) !void {
         const path = try std.mem.concat(Allocator, u8, split_str.items[1..]);
         std.debug.print("Path from request: {s}\n", .{path});
 
-        var file: ?std.fs.File = undefined;
-        if (rootPath == null) {
-            file = std.fs.cwd().openFile(path, .{}) catch null;
-        } else {
-            var pathAllocated = try Allocator.alloc(u8, rootPath.?.len + path.len + 1);
-            defer Allocator.free(pathAllocated);
+        if (strings.equals(request.method, "POST")) {
+            const basePath = rootPath.?;
+            // const fullPath = concatPathAlloc(Allocator, basePath, path);
+            var dir = try std.fs.openDirAbsolute(basePath, .{});
+            defer dir.close();
 
-            var i: u32 = 0;
-            while (i < rootPath.?.len) : (i += 1) {
-                pathAllocated[i] = rootPath.?[i];
-            }
-            var counter: u32 = 0;
-            while (counter < path.len + 1) : (counter += 1) {
-                pathAllocated[i] = if (counter == 0) '/' else path[counter - 1];
-                i += 1;
-            }
-            std.debug.print("File path: {s}\n", .{pathAllocated});
-            file = std.fs.openFileAbsolute(pathAllocated, .{}) catch null;
-        }
+            var fp = try dir.createFile(path, .{});
+            defer fp.close();
 
-        if (file == null) {
-            const response_str = "HTTP/1.1 404 Not Found\r\n\r\n";
+            try fp.writeAll(request.body);
+
+            const response_str = "HTTP/1.1 201 Created\r\n\r\n";
             response = try Allocator.alloc(u8, response_str.len);
             std.mem.copyForwards(u8, response, response_str);
         } else {
-            const contents = try file.?.readToEndAlloc(Allocator, 4096);
-            const format = "HTTP/1.1 200 OK\r\nContent-Type:application/octet-stream\r\nContent-Length:{d}\r\n\r\n{s}";
-            response = try std.fmt.allocPrint(Allocator, format, .{ contents.len, contents });
+            var file: ?std.fs.File = undefined;
+            if (rootPath == null) {
+                file = std.fs.cwd().openFile(path, .{}) catch null;
+            } else {
+                const pathAllocated = try concatPathAlloc(Allocator, rootPath.?, path);
+                defer Allocator.free(pathAllocated);
+                std.debug.print("File path: {s}\n", .{pathAllocated});
+                file = std.fs.openFileAbsolute(pathAllocated, .{}) catch null;
+            }
+
+            if (file == null) {
+                const response_str = "HTTP/1.1 404 Not Found\r\n\r\n";
+                response = try Allocator.alloc(u8, response_str.len);
+                std.mem.copyForwards(u8, response, response_str);
+            } else {
+                const contents = try file.?.readToEndAlloc(Allocator, 4096);
+                const format = "HTTP/1.1 200 OK\r\nContent-Type:application/octet-stream\r\nContent-Length:{d}\r\n\r\n{s}";
+                response = try std.fmt.allocPrint(Allocator, format, .{ contents.len, contents });
+            }
         }
     } else {
         const response_str = "HTTP/1.1 404 Not Found\r\n\r\n";
@@ -150,6 +158,20 @@ fn handleRequest(connection: std.net.Server.Connection) !void {
     defer Allocator.free(response);
 
     try connection.stream.writeAll(response);
+}
+
+fn concatPathAlloc(allocator: std.mem.Allocator, a: String, b: String) ![]const u8 {
+    var pathAllocated = try allocator.alloc(u8, a.len + b.len + 1);
+    var i: u32 = 0;
+    while (i < a.len) : (i += 1) {
+        pathAllocated[i] = a[i];
+    }
+    var counter: u32 = 0;
+    while (counter < b.len + 1) : (counter += 1) {
+        pathAllocated[i] = if (counter == 0) '/' else b[counter - 1];
+        i += 1;
+    }
+    return pathAllocated;
 }
 
 test "strSplit" {
