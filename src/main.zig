@@ -139,7 +139,7 @@ fn handleRequest(connection: std.net.Server.Connection) !void {
             std.mem.copyForwards(u8, response, response_str);
         } else {
             const contents = try file.?.readToEndAlloc(Allocator, 4096);
-            const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
+            const format = "HTTP/1.1 200 OK\r\nContent-Type:application/octet-stream\r\nContent-Length:{d}\r\n\r\n{s}";
             response = try std.fmt.allocPrint(Allocator, format, .{ contents.len, contents });
         }
     } else {
