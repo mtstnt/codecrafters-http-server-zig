@@ -2,7 +2,7 @@ const std = @import("std");
 const net = std.net;
 
 const strings = @import("./strings.zig");
-const http = @import("./http.zig");
+const httpRequest = @import("./request.zig");
 
 const Allocator = std.heap.page_allocator;
 
@@ -41,47 +41,52 @@ pub fn main() !void {
     });
     defer listener.deinit();
 
-    var connection = try listener.accept();
+    while (true) {
+        std.debug.print("Listening for requests...\n", .{});
+        var connection = try listener.accept();
 
-    const buffer = try Allocator.alloc(u8, BUFFER_SIZE);
-    defer Allocator.free(buffer);
+        std.debug.print("Request received.\n", .{});
 
-    // Reset the allocated buffer to zero values.
-    @memset(buffer, 0);
+        const buffer = try Allocator.alloc(u8, BUFFER_SIZE);
+        defer Allocator.free(buffer);
 
-    _ = try connection.stream.read(buffer);
+        // Reset the allocated buffer to zero values.
+        @memset(buffer, 0);
 
-    const request = try http.parseRequest(Allocator, buffer);
+        _ = try connection.stream.read(buffer);
 
-    const routeKey = try matchRoute(request.path);
-    std.log.info("Route key: {s}", .{routeKey});
+        const request = try httpRequest.parse(Allocator, buffer);
 
-    var response: []u8 = undefined;
-    if (strings.equals(routeKey, "ROOT")) {
-        const response_str = "HTTP/1.1 200 OK\r\n\r\nOK";
-        response = try Allocator.alloc(u8, response_str.len);
-        std.mem.copyForwards(u8, response, response_str);
-    } else if (strings.equals(routeKey, "ECHO")) {
-        const split_results = try strings.split(Allocator, request.path, "/");
-        defer split_results.deinit();
+        const routeKey = try matchRoute(request.path);
+        std.log.info("Route key: {s}", .{routeKey});
 
-        const path_parts = split_results.items;
-        const str = path_parts[1];
-        const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
-        response = try std.fmt.allocPrint(Allocator, format, .{ str.len, str });
-    } else if (strings.equals(routeKey, "USER_AGENT")) {
-        const header_value = request.headers.get("User-Agent").?;
-        const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
-        response = try std.fmt.allocPrint(Allocator, format, .{ header_value.len, header_value });
-    } else {
-        const response_str = "HTTP/1.1 404 Not Found\r\n\r\n";
-        response = try Allocator.alloc(u8, response_str.len);
-        std.mem.copyForwards(u8, response, response_str);
+        var response: []u8 = undefined;
+        if (strings.equals(routeKey, "ROOT")) {
+            const response_str = "HTTP/1.1 200 OK\r\n\r\n";
+            response = try Allocator.alloc(u8, response_str.len);
+            std.mem.copyForwards(u8, response, response_str);
+        } else if (strings.equals(routeKey, "ECHO")) {
+            const split_results = try strings.split(Allocator, request.path, "/");
+            defer split_results.deinit();
+
+            const path_parts = split_results.items;
+            const str = path_parts[1];
+            const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
+            response = try std.fmt.allocPrint(Allocator, format, .{ str.len, str });
+        } else if (strings.equals(routeKey, "USER_AGENT")) {
+            const header_value = request.headers.get("User-Agent").?;
+            const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
+            response = try std.fmt.allocPrint(Allocator, format, .{ header_value.len, header_value });
+        } else {
+            const response_str = "HTTP/1.1 404 Not Found\r\n\r\n";
+            response = try Allocator.alloc(u8, response_str.len);
+            std.mem.copyForwards(u8, response, response_str);
+        }
+        defer Allocator.free(response);
+
+        try connection.stream.writeAll(response);
+        connection.stream.close();
     }
-    defer Allocator.free(response);
-
-    try connection.stream.writeAll(response);
-    connection.stream.close();
 
     std.log.info("Exiting...", .{});
 }

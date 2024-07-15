@@ -12,7 +12,7 @@ pub const Request = struct {
     body: String,
 };
 
-pub fn parseRequest(allocator: std.mem.Allocator, b: String) !Request {
+pub fn parse(allocator: std.mem.Allocator, b: String) !Request {
     var line_iterator = std.mem.split(u8, b, "\r\n");
 
     var request = Request{
@@ -105,28 +105,8 @@ test "parse header line" {
 
 test "parse request from string" {
     const request_str = "GET /hello\r\nContent-Type:application/json\r\n\r\nBody";
-    const request = try parseRequest(std.heap.page_allocator, request_str);
+    const request = try parse(std.heap.page_allocator, request_str);
     try T.expect(std.mem.eql(u8, request.method, "GET"));
     try T.expect(std.mem.eql(u8, request.headers.get("Content-Type").?, "application/json"));
     try T.expect(std.mem.eql(u8, request.body, "Body"));
 }
-
-// pub fn fromBytes(allocator: std.mem.Allocator, request_bytes: []const u8) !Self {
-//     const split_result = try strings.split(allocator, request_bytes, "\r\n");
-//     defer split_result.deinit();
-
-//     const lines = split_result.items;
-
-//     if (lines.len == 0) {
-//         return error.EmptyRequest;
-//     }
-
-//     const split_result2 = try strings.split(allocator, lines[0], " ");
-//     defer split_result2.deinit();
-
-//     const parse_results = split_result2.items;
-//     return Request{
-//         .method = parse_results[0],
-//         .path = parse_results[1],
-//     };
-// }
