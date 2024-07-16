@@ -3,6 +3,9 @@
 zig-cache/
 zig-out/
 
+# Files directory
+files
+
 # Compiled binary output
 main
 bin/

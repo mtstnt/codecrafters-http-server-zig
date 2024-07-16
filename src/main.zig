@@ -3,6 +3,7 @@ const net = std.net;
 
 const strings = @import("./strings.zig");
 const httpRequest = @import("./request.zig");
+const Response = @import("./response.zig").Response;
 
 const String = strings.String;
 
@@ -95,17 +96,35 @@ fn handleRequest(connection: std.net.Server.Connection) !void {
 
     var response: []u8 = undefined;
     if (strings.equals(routeKey, "ROOT")) {
-        const response_str = "HTTP/1.1 200 OK\r\n\r\n";
-        response = try Allocator.alloc(u8, response_str.len);
-        std.mem.copyForwards(u8, response, response_str);
+        var responseBuilder = Response.init(Allocator);
+        const responseStr = try responseBuilder.setCode(200).toString();
+        response = try Allocator.alloc(u8, responseStr.len);
+        std.mem.copyForwards(u8, response, responseStr);
     } else if (strings.equals(routeKey, "ECHO")) {
         const split_results = try strings.split(Allocator, request.path, "/");
         defer split_results.deinit();
 
         const path_parts = split_results.items;
         const str = path_parts[1];
-        const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
-        response = try std.fmt.allocPrint(Allocator, format, .{ str.len, str });
+
+        var responseBuilder = Response.init(Allocator);
+        var responseBuilderPtr = responseBuilder
+            .addHeader("Content-Type", "text/plain")
+            .setCode(200)
+            .setBody("");
+
+        const encodingHeader = request.headers.get("Accept-Encoding");
+
+        if (encodingHeader == null) {
+            _ = responseBuilderPtr.setBody(str);
+        } else if (strings.equals(encodingHeader.?, "gzip")) {
+            _ = responseBuilderPtr
+                .addHeader("Content-Encoding", "gzip")
+                .setBody(str);
+        }
+        const responseStr = try responseBuilderPtr.toString();
+        response = try Allocator.alloc(u8, responseStr.len);
+        std.mem.copyForwards(u8, response, responseStr);
     } else if (strings.equals(routeKey, "USER_AGENT")) {
         const header_value = request.headers.get("User-Agent").?;
         const format = "HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nContent-Length:{d}\r\n\r\n{s}";
