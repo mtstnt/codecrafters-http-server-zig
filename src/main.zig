@@ -120,9 +120,12 @@ fn handleRequest(connection: std.net.Server.Connection) !void {
         } else if (encodingHeader != null and !std.mem.containsAtLeast(u8, encodingHeader.?, 1, "gzip")) {
             _ = responseBuilderPtr.setBody("");
         } else {
+            var fbs = std.io.fixedBufferStream(str);
+            var wrt = std.ArrayList(u8).init(Allocator); // Mem leak.
+            try std.compress.gzip.compress(fbs.reader(), wrt.writer(), .{});
             _ = responseBuilderPtr
                 .addHeader("Content-Encoding", "gzip")
-                .setBody(str);
+                .setBody(wrt.items);
         }
         const responseStr = try responseBuilderPtr.toString();
         response = try Allocator.alloc(u8, responseStr.len);
