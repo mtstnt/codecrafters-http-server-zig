@@ -115,9 +115,10 @@ fn handleRequest(connection: std.net.Server.Connection) !void {
 
         const encodingHeader = request.headers.get("Accept-Encoding");
 
-        if (encodingHeader == null) {
-            _ = responseBuilderPtr.setBody(str);
-        } else if (strings.equals(encodingHeader.?, "gzip")) {
+        if (encodingHeader == null or !std.mem.containsAtLeast(u8, encodingHeader.?, 1, "gzip")) {
+            // Omitted body.
+            _ = responseBuilderPtr.setBody("");
+        } else {
             _ = responseBuilderPtr
                 .addHeader("Content-Encoding", "gzip")
                 .setBody(str);
